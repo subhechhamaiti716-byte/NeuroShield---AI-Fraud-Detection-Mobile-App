@@ -315,7 +315,7 @@ async def create_transaction(
 
     features = fraud_detector.extract_features(history, transaction)
     risk_score = fraud_detector.predict_risk(features)
-    is_suspicious = risk_score > 0.7
+    is_suspicious = risk_score > 0.6
 
     db_tx = models.Transaction(
         **transaction.dict(),
