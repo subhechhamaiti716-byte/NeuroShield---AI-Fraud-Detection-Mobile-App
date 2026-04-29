@@ -34,8 +34,8 @@ class FraudDetector:
 
     def __init__(self):
         self.model = IsolationForest(
-            contamination=0.05,
-            n_estimators=150,
+            contamination=0.1,  # More sensitive
+            n_estimators=100,
             random_state=42
         )
         self.is_fitted = False
@@ -165,14 +165,32 @@ class FraudDetector:
             return 0.1
 
         # decision_function: positive = normal, negative = anomaly
-        score = self.model.decision_function(feature_df)[0]
-
+        raw_score = self.model.decision_function(feature_df)[0]
+        
         # Map to [0, 1]:  score ~[-0.5, 0.5]  →  risk = 0.5 - score
-        risk = float(np.clip(0.5 - score, 0.0, 1.0))
+        risk = float(np.clip(0.5 - raw_score, 0.0, 1.0))
 
-        # Amplify to make high-risk scores more distinct
+        # ── Heuristic Boosts (Feature 40: Hybrid AI-Rules System) ───────────────
+        amount = feature_df["amount"].iloc[0]
+        amount_z = feature_df["amount_z"].iloc[0]
+        is_new_loc = feature_df["known_location"].iloc[0] == 0
+
+        # Rule 1: Extreme Amount (High Z-Score or absolute high)
+        if amount_z > 3.0 or amount > 100000:
+            risk = max(risk, 0.82)
+            
+        # Rule 2: High amount + New Location
+        if is_new_loc and amount > 5000:
+            risk = max(risk, 0.78)
+            
+        # Rule 3: Late night transaction (00:00 - 05:00)
+        hour = feature_df["hour"].iloc[0]
+        if hour < 5.0 and amount > 1000:
+            risk = max(risk, 0.75)
+
+        # Final amplification
         if risk > 0.6:
-            risk = min(0.97, risk + 0.2)
+            risk = min(0.98, risk + 0.15)
 
         return risk
 
