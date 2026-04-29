@@ -28,19 +28,23 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const formData = new FormData();
-      formData.append('username', email);
-      formData.append('password', password);
+      console.log('Attempting login for:', email);
       
-      const response = await api.post('/login', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      const params = new URLSearchParams();
+      params.append('username', email);
+      params.append('password', password);
+      
+      const response = await api.post('/login', params, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
       
+      console.log('Login successful, token received.');
       const { access_token } = response.data;
       await AsyncStorage.setItem('token', access_token);
       await checkToken();
       return { success: true };
     } catch (error) {
+      console.error('Login error:', error.response?.data || error.message);
       const detail = error.response?.data?.detail;
       const errorMsg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail[0]?.msg : 'Login failed');
       return { success: false, error: errorMsg };

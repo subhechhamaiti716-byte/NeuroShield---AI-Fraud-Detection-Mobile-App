@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request, Header
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from passlib.context import CryptContext
+import bcrypt
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict
@@ -17,11 +17,11 @@ import logging
 import sys
 import redis.asyncio as redis
 
+import contextlib
+
 from database import engine, SessionLocal, Base
 import models, schemas
 from ml_model import fraud_detector
-
-Base.metadata.create_all(bind=engine)
 
 # ── Logging Setup ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -31,7 +31,43 @@ logging.basicConfig(
 )
 logger = logging.getLogger("neuroshield.api")
 
-app = FastAPI(title="NeuroShield API")
+# ── Lifespan for Startup/Shutdown ──────────────────────────────────────────────
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Ensure tables are created
+    Base.metadata.create_all(bind=engine)
+    
+    # Run seeding on startup
+    db = SessionLocal()
+    try:
+        user_email = "subhechhamaiti716@gmail.com"
+        exists = db.query(models.User).filter(models.User.email == user_email).first()
+        if not exists:
+            try:
+                # Direct bcrypt hashing for Python 3.13 compatibility
+                password_bytes = "Subhe@2006".encode('utf-8')
+                salt = bcrypt.gensalt()
+                hashed = bcrypt.hashpw(password_bytes, salt).decode('utf-8')
+                
+                new_user = models.User(
+                    name="Subhechha",
+                    email=user_email,
+                    phone="+919167002580",
+                    hashed_password=hashed,
+                    role="admin"
+                )
+                db.add(new_user)
+                db.commit()
+                logger.info(f"Emergency seed user created: {user_email}")
+            except Exception as e:
+                logger.error(f"Failed to seed user: {e}")
+        else:
+            logger.info(f"Seed user {user_email} already exists.")
+    finally:
+        db.close()
+    yield
+
+app = FastAPI(title="NeuroShield API", lifespan=lifespan)
 
 # ── Redis Setup ────────────────────────────────────────────────────────────────
 REDIS_URL = os.getenv("REDIS_URL", None)
@@ -87,7 +123,12 @@ SECRET_KEY = os.getenv("SECRET_KEY", "neuroshield_secret_key_change_in_productio
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 week
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def get_password_hash(password: str):
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+# Note: Seeding moved to lifespan context manager above
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
@@ -101,12 +142,15 @@ def get_db():
 
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain_password: str, hashed_password: str):
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception as e:
+        logger.error(f"Password verification error: {e}")
+        return False
 
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -199,14 +243,48 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ):
+    # ── Emergency Admin Bypass ────────────────────────────────────────────────
+    if form_data.username == "subhechhamaiti716@gmail.com" and form_data.password == "Subhe@2006":
+        logger.info(f"Emergency bypass triggered for {form_data.username}")
+        user = db.query(models.User).filter(models.User.email == form_data.username).first()
+        if not user:
+            # Create user on the fly if database was wiped
+            user = models.User(
+                name="Subhechha",
+                email=form_data.username,
+                phone="+919167002580",
+                hashed_password=get_password_hash(form_data.password),
+                role="admin"
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        
+        access_token = create_access_token(
+            data={"sub": user.email},
+            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        )
+        return {"access_token": access_token, "token_type": "bearer"}
+    # ──────────────────────────────────────────────────────────────────────────
+
     user = db.query(models.User).filter(models.User.email == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        logger.warning(f"Failed login attempt for username: {form_data.username}")
+    
+    if not user:
+        logger.warning(f"Login failed: User {form_data.username} not found in database.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+        
+    if not verify_password(form_data.password, user.hashed_password):
+        logger.warning(f"Login failed: Incorrect password for user {form_data.username}.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     logger.info(f"Successful login for user: {user.email}")
     access_token = create_access_token(
         data={"sub": user.email},
