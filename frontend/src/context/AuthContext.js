@@ -41,7 +41,9 @@ export const AuthProvider = ({ children }) => {
       await checkToken();
       return { success: true };
     } catch (error) {
-      return { success: false, error: error.response?.data?.detail || 'Login failed' };
+      const detail = error.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail[0]?.msg : 'Login failed');
+      return { success: false, error: errorMsg };
     }
   };
 
@@ -50,7 +52,9 @@ export const AuthProvider = ({ children }) => {
       await api.post('/signup', { name, email, phone, password });
       return await login(email, password);
     } catch (error) {
-      return { success: false, error: error.response?.data?.detail || 'Signup failed' };
+      const detail = error.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail[0]?.msg : 'Signup failed');
+      return { success: false, error: errorMsg };
     }
   };
 
