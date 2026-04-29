@@ -88,7 +88,12 @@ class FraudDetector:
 
         # ── 4. hour of day (time risk) ─────────────────────────────────────────
         try:
-            hour = float(new_tx.date_time.hour)
+            # new_tx (TransactionCreate) usually doesn't have date_time until saved
+            if hasattr(new_tx, "date_time") and new_tx.date_time:
+                hour = float(new_tx.date_time.hour)
+            else:
+                from datetime import datetime, timezone
+                hour = float(datetime.now(timezone.utc).hour)
         except Exception:
             hour = 12.0
 

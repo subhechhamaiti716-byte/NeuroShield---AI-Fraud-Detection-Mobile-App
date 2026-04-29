@@ -118,6 +118,7 @@ const AddTransactionScreen = ({ navigation }) => {
 
     try {
       await api.post('/transactions', txData);
+      setLoading(false); 
       navigation.goBack();
     } catch (err) {
       console.log('Add transaction error', err?.message);

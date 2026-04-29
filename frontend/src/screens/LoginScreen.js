@@ -29,10 +29,10 @@ const LoginScreen = ({ navigation }) => {
     setError('');
 
     const result = await login(trimEmail, password);
+    setLoading(false);
 
     if (!result.success) {
       setError(result.error || 'Login failed. Please try again.');
-      setLoading(false);
     }
     // On success, AuthContext sets user → navigator switches automatically
   }, [email, password, login]);
