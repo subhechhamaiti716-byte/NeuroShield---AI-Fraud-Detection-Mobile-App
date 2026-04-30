@@ -4,6 +4,8 @@ import {
   TouchableOpacity, ActivityIndicator, TextInput
 } from 'react-native';
 import api from '../api/api';
+import * as WebBrowser from 'expo-web-browser';
+import axios from 'axios';
 
 const CATEGORY_ICONS = {
   'Shopping': '🛍️', 'Groceries': '🛒', 'Food & Drink': '🍽️',
@@ -38,6 +40,18 @@ const TxRow = React.memo(({ item }) => (
       )}
       {item.user_feedback === 'fraud' && <Text style={styles.feedbackFraud}>✗ Fraud</Text>}
       {item.user_feedback === 'safe'  && <Text style={styles.feedbackSafe}>✓ Verified</Text>}
+      
+      {item.receipt_url && (
+        <TouchableOpacity 
+          style={styles.receiptLink} 
+          onPress={() => {
+            const baseUrl = api.defaults.baseURL;
+            WebBrowser.openBrowserAsync(`${baseUrl}${item.receipt_url}`);
+          }}
+        >
+          <Text style={styles.receiptLinkText}>📄 Receipt</Text>
+        </TouchableOpacity>
+      )}
     </View>
   </View>
 ));
@@ -244,6 +258,20 @@ const styles = StyleSheet.create({
   emptyState:          { alignItems: 'center', paddingTop: 60 },
   emptyIcon:           { fontSize: 40, marginBottom: 12 },
   emptyText:           { color: '#64748b', fontSize: 16 },
+  receiptLink: {
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#38bdf820',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#38bdf840',
+  },
+  receiptLinkText: {
+    color: '#38bdf8',
+    fontSize: 10,
+    fontWeight: '700',
+  },
 });
 
 export default TransactionHistoryScreen;

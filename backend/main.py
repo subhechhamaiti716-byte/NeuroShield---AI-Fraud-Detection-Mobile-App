@@ -1,4 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request, Header
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request, Header, File, UploadFile
+from fastapi.staticfiles import StaticFiles
+import uuid
+import shutil
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import bcrypt
@@ -36,6 +39,9 @@ logger = logging.getLogger("neuroshield.api")
 async def lifespan(app: FastAPI):
     # Ensure tables are created
     Base.metadata.create_all(bind=engine)
+    
+    # Ensure uploads directory exists
+    os.makedirs("static/uploads", exist_ok=True)
     
     # Run seeding on startup
     db = SessionLocal()
@@ -296,6 +302,25 @@ def login_for_access_token(
 @app.get("/users/me", response_model=schemas.UserResponse)
 def read_users_me(current_user: models.User = Depends(get_current_user)):
     return current_user
+
+
+@app.post("/upload/receipt")
+async def upload_receipt(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user)
+):
+    # Security: check extension
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in [".jpg", ".jpeg", ".png"]:
+        raise HTTPException(status_code=400, detail="Invalid image format. Use JPG or PNG.")
+    
+    unique_filename = f"{uuid.uuid4()}{ext}"
+    file_path = f"static/uploads/{unique_filename}"
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    return {"url": f"/static/uploads/{unique_filename}"}
 
 
 # ── Transaction endpoints ──────────────────────────────────────────────────────
@@ -584,6 +609,8 @@ async def razorpay_webhook(
             asyncio.create_task(redis_client.delete(f"analytics_{user.id}"))
             
     return {"status": "success"}
+    
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 if __name__ == "__main__":

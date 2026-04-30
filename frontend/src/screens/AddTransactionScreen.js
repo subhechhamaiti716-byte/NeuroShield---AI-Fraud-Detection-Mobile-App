@@ -7,6 +7,8 @@ import {
 import api from '../api/api';
 import * as Location from 'expo-location';
 import * as Device from 'expo-device';
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 
 const CATEGORIES = [
   'Shopping', 'Groceries', 'Food & Drink',
@@ -17,6 +19,7 @@ const AddTransactionScreen = ({ navigation }) => {
   const [amount,   setAmount]   = useState('');
   const [category, setCategory] = useState('');
   const [notes,    setNotes]    = useState('');
+  const [receiptImage, setReceiptImage] = useState(null);
   const [loading,  setLoading]  = useState(false);
 
   const [locationData,          setLocationData]          = useState({ lat: null, lon: null, locationName: 'Fetching…' });
@@ -80,6 +83,24 @@ const AddTransactionScreen = ({ navigation }) => {
     setLocationLoading(false);
   }, []);
 
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'We need camera roll permissions to upload receipts.');
+      return;
+    }
+
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setReceiptImage(result.assets[0]);
+    }
+  };
+
   const handleAdd = useCallback(async () => {
     Keyboard.dismiss();
 
@@ -103,6 +124,39 @@ const AddTransactionScreen = ({ navigation }) => {
     }
 
     setLoading(true);
+    
+    let receiptUrl = null;
+    if (receiptImage) {
+        try {
+            const formData = new FormData();
+            formData.append('file', {
+                uri: receiptImage.uri,
+                name: 'receipt.jpg',
+                type: 'image/jpeg',
+            });
+            
+            const uploadRes = await api.post('/upload/receipt', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            receiptUrl = uploadRes.data.url;
+        } catch (uploadErr) {
+            console.log('Upload error', uploadErr);
+            Alert.alert('Upload Failed', 'Could not upload receipt image. Submit anyway?', [
+                { text: 'Cancel', onPress: () => { setLoading(false); return; }, style: 'cancel' },
+                { text: 'Yes', onPress: () => proceedWithTx(null) }
+            ]);
+            return;
+        }
+    }
+    
+    await proceedWithTx(receiptUrl);
+  }, [amount, category, notes, manualLocationEnabled, manualLocation, locationData, deviceData, receiptImage, navigation]);
+
+  const proceedWithTx = async (receiptUrl) => {
+    const parsedAmount = parseFloat(amount);
+    const finalLocation = manualLocationEnabled && manualLocation.trim()
+      ? manualLocation.trim()
+      : locationData.locationName;
 
     const txData = {
       amount:       parsedAmount,
@@ -114,6 +168,7 @@ const AddTransactionScreen = ({ navigation }) => {
       device_id:    deviceData.deviceId,
       device_model: deviceData.deviceModel,
       os:           deviceData.os,
+      receipt_url:  receiptUrl,
     };
 
     try {
@@ -125,7 +180,7 @@ const AddTransactionScreen = ({ navigation }) => {
       Alert.alert('Error', err.response?.data?.detail || 'Failed to add transaction.');
       setLoading(false);
     }
-  }, [amount, category, notes, manualLocationEnabled, manualLocation, locationData, deviceData, navigation]);
+  };
 
   const goBack       = useCallback(() => navigation.goBack(), [navigation]);
   const toggleManual = useCallback((val) => {
@@ -269,6 +324,24 @@ const AddTransactionScreen = ({ navigation }) => {
           </View>
         </View>
 
+        {/* ── Receipt Upload ── */}
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Receipt Evidence (Optional)</Text>
+          {receiptImage ? (
+            <View style={styles.receiptPreview}>
+              <Image source={{ uri: receiptImage.uri }} style={styles.previewImg} />
+              <TouchableOpacity style={styles.removeImg} onPress={() => setReceiptImage(null)}>
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.uploadBox} onPress={pickImage} disabled={loading}>
+              <Text style={styles.uploadIcon}>📸</Text>
+              <Text style={styles.uploadText}>Attach Receipt Image</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         {/* ── Submit ── */}
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
@@ -346,6 +419,15 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.6 },
   buttonText:     { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
   loadingHint:    { color: '#475569', textAlign: 'center', fontSize: 13, marginTop: 12 },
+  uploadBox: {
+    backgroundColor: '#1e293b', borderStyle: 'dashed', borderWidth: 1, borderColor: '#38bdf8',
+    borderRadius: 16, height: 100, justifyContent: 'center', alignItems: 'center',
+  },
+  uploadIcon: { fontSize: 28, marginBottom: 4 },
+  uploadText: { color: '#38bdf8', fontSize: 13, fontWeight: '600' },
+  receiptPreview: { width: '100%', height: 200, borderRadius: 16, overflow: 'hidden', backgroundColor: '#1e293b' },
+  previewImg: { width: '100%', height: '100%' },
+  removeImg: { position: 'absolute', top: 12, right: 12, backgroundColor: '#ef4444', width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
 });
 
 export default AddTransactionScreen;

@@ -28,6 +28,7 @@ class TransactionBase(BaseModel):
     device_model: Optional[str] = None
     os: Optional[str] = None
     notes: Optional[str] = None
+    receipt_url: Optional[str] = None
 
 class TransactionCreate(TransactionBase):
     pass

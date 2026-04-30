@@ -35,6 +35,7 @@ class Transaction(Base):
     risk_score = Column(Float, default=0.0)
     is_suspicious = Column(Boolean, default=False)
     user_feedback = Column(String, nullable=True) # "safe" or "fraud"
+    receipt_url = Column(String, nullable=True) # Feature 41: File Storage
     
     owner_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="transactions")
