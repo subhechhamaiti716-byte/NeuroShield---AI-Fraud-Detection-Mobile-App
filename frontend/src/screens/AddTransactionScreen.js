@@ -12,12 +12,12 @@ const CATEGORIES = [
 
 const AddTransactionScreen = ({ navigation }) => {
   const [amount,   setAmount]   = useState('');
-  const [merchant, setMerchant] = useState('');
+  const [location, setLocation] = useState('');
   const [category, setCategory] = useState('');
   const [notes,    setNotes]    = useState('');
   const [loading,  setLoading]  = useState(false);
 
-  const merchantRef = useRef(null);
+  const locationRef = useRef(null);
   const notesRef = useRef(null);
 
   const handleAdd = useCallback(async () => {
@@ -28,8 +28,8 @@ const AddTransactionScreen = ({ navigation }) => {
       Alert.alert('Invalid Amount', 'Please enter a valid amount greater than 0.');
       return;
     }
-    if (!merchant.trim()) {
-      Alert.alert('Merchant Required', 'Please enter a merchant name.');
+    if (!location.trim()) {
+      Alert.alert('Location Required', 'Please enter a location.');
       return;
     }
     if (!category) {
@@ -39,18 +39,16 @@ const AddTransactionScreen = ({ navigation }) => {
 
     setLoading(true);
     
-    // In NeuroShield, 'location' is required for the ML model, so we map Merchant -> location
     const txData = {
       amount:       parsedAmount,
       category,
       notes:        notes.trim(),
-      location:     merchant.trim(), 
+      location:     location.trim(), 
       lat:          null,
       lon:          null,
       device_id:    'unknown',
       device_model: 'unknown',
       os:           'unknown',
-      receipt_url:  null,
     };
 
     try {
@@ -62,7 +60,7 @@ const AddTransactionScreen = ({ navigation }) => {
       Alert.alert('Error', err.response?.data?.detail || 'Failed to add transaction.');
       setLoading(false);
     }
-  }, [amount, merchant, category, notes, navigation]);
+  }, [amount, location, category, notes, navigation]);
 
   const goBack = useCallback(() => navigation.goBack(), [navigation]);
 
@@ -103,23 +101,23 @@ const AddTransactionScreen = ({ navigation }) => {
               onChangeText={setAmount}
               keyboardType="decimal-pad"
               returnKeyType="next"
-              onSubmitEditing={() => merchantRef.current?.focus()}
+              onSubmitEditing={() => locationRef.current?.focus()}
               blurOnSubmit={false}
               editable={!loading}
             />
           </View>
         </View>
 
-        {/* ── Merchant ── */}
+        {/* ── Location ── */}
         <View style={styles.inputContainer}>
-          <Text style={styles.label}>Merchant</Text>
+          <Text style={styles.label}>Location</Text>
           <TextInput
-            ref={merchantRef}
+            ref={locationRef}
             style={styles.input}
-            placeholder="e.g. Amazon, Starbucks"
+            placeholder="e.g. Mumbai, New York"
             placeholderTextColor="#64748b"
-            value={merchant}
-            onChangeText={setMerchant}
+            value={location}
+            onChangeText={setLocation}
             returnKeyType="next"
             onSubmitEditing={() => notesRef.current?.focus()}
             blurOnSubmit={false}
