@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, ActivityIndicator, TextInput
+  TouchableOpacity, ActivityIndicator
 } from 'react-native';
 import api from '../api/api';
-import * as WebBrowser from 'expo-web-browser';
-import axios from 'axios';
 
 const CATEGORY_ICONS = {
   'Shopping': '🛍️', 'Groceries': '🛒', 'Food & Drink': '🍽️',
@@ -13,10 +11,8 @@ const CATEGORY_ICONS = {
   'Bills': '📄', 'Other': '💸',
 };
 
-// Fixed row height → enables getItemLayout (no layout measurement on every row)
 const ITEM_HEIGHT = 90;
 
-// Memoised row — only re-renders if this item object changes
 const TxRow = React.memo(({ item }) => (
   <View style={[styles.txCard, item.is_suspicious && styles.txCardSuspicious]}>
     <View style={[styles.txIconContainer, item.is_suspicious ? styles.txIconSuspiciousBg : styles.txIconSafeBg]}>
@@ -40,18 +36,6 @@ const TxRow = React.memo(({ item }) => (
       )}
       {item.user_feedback === 'fraud' && <Text style={styles.feedbackFraud}>✗ Fraud</Text>}
       {item.user_feedback === 'safe'  && <Text style={styles.feedbackSafe}>✓ Verified</Text>}
-      
-      {item.receipt_url && (
-        <TouchableOpacity 
-          style={styles.receiptLink} 
-          onPress={() => {
-            const baseUrl = api.defaults.baseURL;
-            WebBrowser.openBrowserAsync(`${baseUrl}${item.receipt_url}`);
-          }}
-        >
-          <Text style={styles.receiptLinkText}>📄 Receipt</Text>
-        </TouchableOpacity>
-      )}
     </View>
   </View>
 ));
@@ -62,7 +46,6 @@ const TransactionHistoryScreen = ({ navigation }) => {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading]           = useState(true);
   const [filter, setFilter]             = useState('All');
-  const [searchQuery, setSearchQuery]   = useState('');
 
   useEffect(() => { fetchHistory(); }, []);
 
@@ -76,33 +59,17 @@ const TransactionHistoryScreen = ({ navigation }) => {
     setLoading(false);
   }, []);
 
-  // Memoised filter — supports both status filters and real-time text search
   const filteredData = useMemo(() => {
     let base = transactions;
-    
-    // 1. Apply Status Filter
     if (filter === 'Safe')       base = base.filter(t => !t.is_suspicious);
     if (filter === 'Suspicious') base = base.filter(t =>  t.is_suspicious);
-    
-    // 2. Apply Text Search
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      base = base.filter(t => 
-        (t.category?.toLowerCase().includes(q)) ||
-        (t.location?.toLowerCase().includes(q)) ||
-        (t.notes?.toLowerCase().includes(q)) ||
-        (t.amount?.toString().includes(q))
-      );
-    }
-    
     return base;
-  }, [transactions, filter, searchQuery]);
+  }, [transactions, filter]);
 
   const goBack       = useCallback(() => navigation.goBack(), [navigation]);
   const keyExtractor = useCallback((item) => item.id.toString(), []);
   const renderItem   = useCallback(({ item }) => <TxRow item={item} />, []);
 
-  // Constant-time layout calculation — eliminates FlatList measuring stutter
   const getItemLayout = useCallback((_, index) => ({
     length: ITEM_HEIGHT,
     offset: ITEM_HEIGHT * index,
@@ -112,9 +79,9 @@ const TransactionHistoryScreen = ({ navigation }) => {
   const ListEmpty = useMemo(() => (
     <View style={styles.emptyState}>
       <Text style={styles.emptyIcon}>🔍</Text>
-      <Text style={styles.emptyText}>{searchQuery ? 'No matches found' : 'No transactions found'}</Text>
+      <Text style={styles.emptyText}>No transactions found</Text>
     </View>
-  ), [searchQuery]);
+  ), []);
 
   return (
     <View style={styles.container}>
@@ -123,28 +90,7 @@ const TransactionHistoryScreen = ({ navigation }) => {
         <TouchableOpacity onPress={goBack} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>History</Text>
-      </View>
-
-      {/* ── Search Bar ── */}
-      <View style={styles.searchSection}>
-        <View style={styles.searchBar}>
-          <Text style={styles.searchEmoji}>🔍</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search category, location, or notes…"
-            placeholderTextColor="#64748b"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            clearButtonMode="while-editing"
-            autoCorrect={false}
-          />
-          {searchQuery.length > 0 && (
-             <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearBtn}>
-                <Text style={{ color: '#64748b', fontSize: 20 }}>×</Text>
-             </TouchableOpacity>
-          )}
-        </View>
+        <Text style={styles.title}>Transaction History</Text>
       </View>
 
       {/* ── Filter tabs ── */}
@@ -190,37 +136,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
   header: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 24, paddingTop: 56, paddingBottom: 20,
+    paddingHorizontal: 20, paddingTop: 50, paddingBottom: 16,
     backgroundColor: '#1e293b', borderBottomWidth: 1, borderBottomColor: '#334155',
   },
   backBtn:  { marginRight: 16 },
   backText: { color: '#38bdf8', fontSize: 16 },
-  title:    { color: '#f8fafc', fontSize: 20, fontWeight: 'bold' },
-  searchSection: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 4,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e293b',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: '#334155',
-    height: 50,
-  },
-  searchEmoji: { fontSize: 16, marginRight: 10 },
-  searchInput: {
-    flex: 1,
-    color: '#f8fafc',
-    fontSize: 15,
-    height: '100%',
-  },
-  clearBtn: {
-    padding: 4,
-  },
+  title:    { color: '#f8fafc', fontSize: 18, fontWeight: '600' },
   filterContainer: {
     flexDirection: 'row', alignItems: 'center',
     padding: 14, paddingHorizontal: 20, gap: 8,
@@ -258,20 +179,6 @@ const styles = StyleSheet.create({
   emptyState:          { alignItems: 'center', paddingTop: 60 },
   emptyIcon:           { fontSize: 40, marginBottom: 12 },
   emptyText:           { color: '#64748b', fontSize: 16 },
-  receiptLink: {
-    marginTop: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#38bdf820',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#38bdf840',
-  },
-  receiptLinkText: {
-    color: '#38bdf8',
-    fontSize: 10,
-    fontWeight: '700',
-  },
 });
 
 export default TransactionHistoryScreen;
