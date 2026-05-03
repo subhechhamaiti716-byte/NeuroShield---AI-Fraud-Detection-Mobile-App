@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator,
-  Alert, ScrollView, Switch, StatusBar, Keyboard
+  Alert, ScrollView, StatusBar, Keyboard
 } from 'react-native';
 import api from '../api/api';
 import * as Location from 'expo-location';
@@ -22,42 +22,50 @@ const AddTransactionScreen = ({ navigation }) => {
   const [receiptImage, setReceiptImage] = useState(null);
   const [loading,  setLoading]  = useState(false);
 
-  const [locationData,          setLocationData]          = useState({ lat: null, lon: null, locationName: 'Fetching…' });
-  const [manualLocationEnabled, setManualLocationEnabled] = useState(false);
-  const [manualLocation,        setManualLocation]        = useState('');
-  const [locationLoading,       setLocationLoading]       = useState(true);
+  // Consolidated location state: automatic pre-fill, user can still edit
+  const [location,      setLocation]      = useState('Fetching location…');
+  const [latLon,        setLatLon]        = useState({ lat: null, lon: null });
+  const [locationLoading, setLocationLoading] = useState(true);
 
   const [deviceData, setDeviceData] = useState({ deviceId: 'unknown', deviceModel: 'unknown', os: 'unknown' });
 
   // Refs for keyboard chaining
-  const notesRef         = useRef(null);
-  const manualLocRef     = useRef(null);
+  const notesRef = useRef(null);
 
   useEffect(() => {
     setupDeviceAndLocation();
   }, []);
 
   const setupDeviceAndLocation = useCallback(async () => {
-    // Device — synchronous reads, no async needed
+    // Device info
     setDeviceData({
       deviceId:    Device.osBuildId || Device.deviceName || 'unknown',
       deviceModel: Device.modelName || 'unknown',
       os:          `${Device.osName || 'Unknown'} ${Device.osVersion || ''}`.trim(),
     });
 
-    // Location
+    // Start fetching location automatically
+    fetchLocation();
+  }, []);
+
+  const fetchLocation = async () => {
     setLocationLoading(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        setLocationData(prev => ({ ...prev, locationName: 'Permission Denied' }));
-        setManualLocationEnabled(true);
+        setLocation('Permission Denied (Enter manually)');
         setLocationLoading(false);
         return;
       }
 
+      // Try to get location with timeout
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
+      });
+
+      setLatLon({
+        lat: loc.coords.latitude,
+        lon: loc.coords.longitude,
       });
 
       const geocode = await Location.reverseGeocodeAsync({
@@ -67,21 +75,18 @@ const AddTransactionScreen = ({ navigation }) => {
 
       const city = geocode?.[0]?.city
         || geocode?.[0]?.region
-        || geocode?.[0]?.country
+        || geocode?.[0]?.district
+        || geocode?.[0]?.name
         || 'Unknown City';
 
-      setLocationData({
-        lat:          loc.coords.latitude,
-        lon:          loc.coords.longitude,
-        locationName: city,
-      });
+      // Only update if the user hasn't started typing a custom location yet
+      setLocation(city);
     } catch (err) {
       console.log('Location error', err?.message);
-      setLocationData(prev => ({ ...prev, locationName: 'Location Error' }));
-      setManualLocationEnabled(true);
+      setLocation('Location Error (Enter manually)');
     }
     setLocationLoading(false);
-  }, []);
+  };
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -114,12 +119,10 @@ const AddTransactionScreen = ({ navigation }) => {
       return;
     }
 
-    const finalLocation = manualLocationEnabled && manualLocation.trim()
-      ? manualLocation.trim()
-      : locationData.locationName;
+    const finalLocation = location.trim();
 
-    if (!finalLocation || finalLocation === 'Fetching…' || finalLocation === 'Location Error') {
-      Alert.alert('Location Required', 'Enter a location manually or wait for GPS.');
+    if (!finalLocation || finalLocation === 'Fetching location…' || finalLocation === 'Location Error (Enter manually)') {
+      Alert.alert('Location Required', 'Please wait for GPS or enter a location manually.');
       return;
     }
 
@@ -150,21 +153,18 @@ const AddTransactionScreen = ({ navigation }) => {
     }
     
     await proceedWithTx(receiptUrl);
-  }, [amount, category, notes, manualLocationEnabled, manualLocation, locationData, deviceData, receiptImage, navigation]);
+  }, [amount, category, notes, location, latLon, deviceData, receiptImage, navigation]);
 
   const proceedWithTx = async (receiptUrl) => {
     const parsedAmount = parseFloat(amount);
-    const finalLocation = manualLocationEnabled && manualLocation.trim()
-      ? manualLocation.trim()
-      : locationData.locationName;
 
     const txData = {
       amount:       parsedAmount,
       category,
       notes:        notes.trim(),
-      location:     finalLocation,
-      lat:          manualLocationEnabled ? null : locationData.lat,
-      lon:          manualLocationEnabled ? null : locationData.lon,
+      location:     location.trim(),
+      lat:          latLon.lat,
+      lon:          latLon.lon,
       device_id:    deviceData.deviceId,
       device_model: deviceData.deviceModel,
       os:           deviceData.os,
@@ -183,10 +183,6 @@ const AddTransactionScreen = ({ navigation }) => {
   };
 
   const goBack       = useCallback(() => navigation.goBack(), [navigation]);
-  const toggleManual = useCallback((val) => {
-    setManualLocationEnabled(val);
-    if (val) setTimeout(() => manualLocRef.current?.focus(), 100);
-  }, []);
 
   return (
     <KeyboardAvoidingView
@@ -267,51 +263,32 @@ const AddTransactionScreen = ({ navigation }) => {
 
         {/* ── Location block ── */}
         <View style={styles.metaContainer}>
-          <View style={styles.metaRow}>
-            <Text style={styles.metaIcon}>📍</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.metaLabel}>Detected Location</Text>
-              {locationLoading
-                ? <ActivityIndicator size="small" color="#38bdf8" style={{ marginTop: 4, alignSelf: 'flex-start' }} />
-                : <Text style={styles.metaValue}>{locationData.locationName}</Text>
-              }
+          <View style={styles.inputContainer}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={styles.label}>Transaction Location</Text>
+              {locationLoading && <ActivityIndicator size="small" color="#38bdf8" />}
             </View>
-            <TouchableOpacity
-              onPress={setupDeviceAndLocation}
-              style={styles.refreshBtn}
-              disabled={locationLoading || loading}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={styles.refreshText}>↺</Text>
-            </TouchableOpacity>
+            <View style={styles.locationInputWrapper}>
+              <Text style={styles.locationIcon}>📍</Text>
+              <TextInput
+                style={styles.locationInput}
+                placeholder="Enter city or address…"
+                placeholderTextColor="#64748b"
+                value={location}
+                onChangeText={setLocation}
+                editable={!loading}
+              />
+              <TouchableOpacity
+                onPress={fetchLocation}
+                style={styles.refreshBtn}
+                disabled={locationLoading || loading}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.refreshText}>↺</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.locationHint}>Detected automatically. You can edit if incorrect.</Text>
           </View>
-
-          {/* Manual toggle */}
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleLabel}>Enter location manually</Text>
-            <Switch
-              value={manualLocationEnabled}
-              onValueChange={toggleManual}
-              trackColor={{ false: '#334155', true: '#0ea5e940' }}
-              thumbColor={manualLocationEnabled ? '#0ea5e9' : '#64748b'}
-              disabled={loading}
-            />
-          </View>
-
-          {manualLocationEnabled && (
-            <TextInput
-              ref={manualLocRef}
-              style={[styles.input, { marginTop: 10 }]}
-              placeholder="e.g. Mumbai, Delhi, Bangalore…"
-              placeholderTextColor="#64748b"
-              value={manualLocation}
-              onChangeText={setManualLocation}
-              autoCorrect={false}
-              returnKeyType="done"
-              onSubmitEditing={Keyboard.dismiss}
-              editable={!loading}
-            />
-          )}
 
           {/* Device info */}
           <View style={styles.deviceRow}>
@@ -395,17 +372,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b', borderRadius: 16, padding: 16,
     marginBottom: 28, borderWidth: 1, borderColor: '#334155',
   },
+  locationInputWrapper: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#0f172a', borderRadius: 12,
+    borderWidth: 1, borderColor: '#334155',
+    paddingHorizontal: 12,
+  },
+  locationIcon: { fontSize: 18, marginRight: 8 },
+  locationInput: {
+    flex: 1, color: '#f8fafc', fontSize: 15,
+    paddingVertical: 12,
+  },
+  locationHint: { color: '#64748b', fontSize: 11, marginTop: 6, fontStyle: 'italic' },
   metaRow:    { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 },
   metaIcon:   { fontSize: 22, marginRight: 12, marginTop: 2 },
   metaLabel:  { color: '#94a3b8', fontSize: 12 },
   metaValue:  { color: '#cbd5e1', fontSize: 14, fontWeight: '500', marginTop: 2 },
-  refreshBtn: { padding: 6, backgroundColor: '#334155', borderRadius: 8, marginLeft: 8 },
-  refreshText:{ color: '#38bdf8', fontSize: 18, fontWeight: 'bold' },
-  toggleRow:  {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#334155',
-  },
-  toggleLabel: { color: '#94a3b8', fontSize: 14 },
+  refreshBtn: { padding: 4, marginLeft: 4 },
+  refreshText:{ color: '#38bdf8', fontSize: 20, fontWeight: 'bold' },
   deviceRow:   {
     flexDirection: 'row', alignItems: 'flex-start',
     marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#334155',

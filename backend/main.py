@@ -238,9 +238,16 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         push_token=user.push_token,
         hashed_password=get_password_hash(user.password),
     )
+    from sqlalchemy.exc import IntegrityError
     db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    try:
+        db.commit()
+        db.refresh(db_user)
+    except IntegrityError as e:
+        db.rollback()
+        logger.error(f"Integrity error during signup: {e}")
+        raise HTTPException(status_code=400, detail="An account with this email or phone number already exists.")
+    
     logger.info(f"New user registered: {user.email}")
     return db_user
 
@@ -250,14 +257,16 @@ def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ):
     # ── Emergency Admin Bypass ────────────────────────────────────────────────
-    if form_data.username == "subhechhamaiti716@gmail.com" and form_data.password == "Subhe@2006":
-        logger.info(f"Emergency bypass triggered for {form_data.username}")
-        user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    # Handle possible spaces or casing in email input
+    clean_username = form_data.username.strip().lower()
+    if clean_username == "subhechhamaiti716@gmail.com" and form_data.password == "Subhe@2006":
+        logger.info(f"Emergency bypass triggered for {clean_username}")
+        user = db.query(models.User).filter(models.User.email == clean_username).first()
         if not user:
             # Create user on the fly if database was wiped
             user = models.User(
                 name="Subhechha",
-                email=form_data.username,
+                email=clean_username,
                 phone="+919167002580",
                 hashed_password=get_password_hash(form_data.password),
                 role="admin"
@@ -273,10 +282,10 @@ def login_for_access_token(
         return {"access_token": access_token, "token_type": "bearer"}
     # ──────────────────────────────────────────────────────────────────────────
 
-    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    user = db.query(models.User).filter(models.User.email == clean_username).first()
     
     if not user:
-        logger.warning(f"Login failed: User {form_data.username} not found in database.")
+        logger.warning(f"Login failed: User {clean_username} not found in database.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -284,7 +293,7 @@ def login_for_access_token(
         )
         
     if not verify_password(form_data.password, user.hashed_password):
-        logger.warning(f"Login failed: Incorrect password for user {form_data.username}.")
+        logger.warning(f"Login failed: Incorrect password for user {clean_username}.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

@@ -3,9 +3,9 @@
 NeuroShield is an enterprise-grade fintech platform designed to detect and prevent fraudulent transactions in real-time. By combining a **FastAPI** backend with an **Isolation Forest** machine learning model and a high-performance **React Native (Expo)** mobile interface, NeuroShield provides sub-10ms anomaly detection and instant user alerts.
 
 ## 🚀 Live Links
-- **Mobile Web App:** [https://neuro-shield-ai-fraud-detection-mobile-app.vercel.app](https://neuro-shield-ai-fraud-detection-mobile-app.vercel.app)
-- **API Backend:** [https://neuroshield-ai-fraud-detection-mobile-app.onrender.com](https://neuroshield-ai-fraud-detection-mobile-app.onrender.com)
-- **API Docs (Swagger):** [https://neuroshield-ai-fraud-detection-mobile-app.onrender.com/docs](https://neuroshield-ai-fraud-detection-mobile-app.onrender.com/docs)
+- **Mobile Web App:** [https://frontend-one-chi-32.vercel.app](https://frontend-one-chi-32.vercel.app)
+- **API Backend:** [https://neuroshield-ai-fraud-detection-app.onrender.com](https://neuroshield-ai-fraud-detection-app.onrender.com)
+- **API Docs (Swagger):** [https://neuroshield-ai-fraud-detection-app.onrender.com/docs](https://neuroshield-ai-fraud-detection-app.onrender.com/docs)
 
 ## ✨ Key Features
 - **Real-Time Fraud Detection:** Uses an Unsupervised Isolation Forest model to score every transaction based on location, amount, and historical behavior.

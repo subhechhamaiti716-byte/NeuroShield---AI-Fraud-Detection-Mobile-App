@@ -1,15 +1,17 @@
-import React, { useState, useContext, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator,
   StatusBar, Keyboard, ScrollView
 } from 'react-native';
 import { AuthContext } from '../context/AuthContext';
+import api from '../api/api';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
+  const [isWakingUp, setIsWakingUp] = useState(false); // For long cold starts
   const [error, setError]       = useState('');
   const [showPwd, setShowPwd]   = useState(false);
 
@@ -17,6 +19,14 @@ const LoginScreen = ({ navigation }) => {
 
   // Refs for focus chaining — zero input-lag keyboard navigation
   const passwordRef = useRef(null);
+
+  // PRE-WARM: Ping the server immediately when login screen opens
+  // This starts the Render "cold start" wakeup while the user is typing.
+  useEffect(() => {
+    api.get('/ping').catch(() => {
+      /* ignore, just waking up */
+    });
+  }, []);
 
   const handleLogin = useCallback(async () => {
     Keyboard.dismiss();
@@ -26,10 +36,19 @@ const LoginScreen = ({ navigation }) => {
     if (!password)  { setError('Please enter your password'); return; }
 
     setLoading(true);
+    setIsWakingUp(false);
     setError('');
 
+    // If it takes more than 5 seconds, show the "Waking up" message
+    const wakeTimer = setTimeout(() => {
+      setIsWakingUp(true);
+    }, 5000);
+
     const result = await login(trimEmail, password);
+    
+    clearTimeout(wakeTimer);
     setLoading(false);
+    setIsWakingUp(false);
 
     if (!result.success) {
       setError(result.error || 'Login failed. Please try again.');
@@ -126,7 +145,9 @@ const LoginScreen = ({ navigation }) => {
         </TouchableOpacity>
 
         {loading && (
-          <Text style={styles.loadingHint}>Verifying your credentials…</Text>
+          <Text style={styles.loadingHint}>
+            {isWakingUp ? '☁️ Waking up cloud server (Cold Start)…' : 'Verifying your credentials…'}
+          </Text>
         )}
 
         {/* ── Footer ── */}
