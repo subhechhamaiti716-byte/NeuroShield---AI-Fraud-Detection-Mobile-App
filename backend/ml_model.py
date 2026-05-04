@@ -99,9 +99,9 @@ class FraudDetector:
 
         # ── 5. location distance km (from last tx that had coords) ─────────────
         location_distance_km = 0.0
-        if new_tx.lat and new_tx.lon:
+        if new_tx.lat is not None and new_tx.lon is not None:
             for past in reversed(hist):
-                if past.lat and past.lon:
+                if getattr(past, "lat", None) is not None and getattr(past, "lon", None) is not None:
                     location_distance_km = haversine_km(
                         past.lat, past.lon,
                         float(new_tx.lat), float(new_tx.lon)
@@ -111,11 +111,12 @@ class FraudDetector:
         # ── 6. transaction frequency today ────────────────────────────────────
         from datetime import datetime, timezone
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        tx_freq_today = sum(
-            1 for t in hist
-            if hasattr(t, "date_time") and t.date_time and
-               t.date_time.strftime("%Y-%m-%d") == today_str
-        )
+        tx_freq_today = 0
+        for t in hist:
+            dt = getattr(t, "date_time", None)
+            if dt and hasattr(dt, "strftime"):
+                if dt.strftime("%Y-%m-%d") == today_str:
+                    tx_freq_today += 1
 
         return pd.DataFrame([{
             "amount":               float(new_tx.amount),

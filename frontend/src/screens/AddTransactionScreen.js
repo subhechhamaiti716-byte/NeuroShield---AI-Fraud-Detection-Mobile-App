@@ -56,8 +56,21 @@ const AddTransactionScreen = ({ navigation }) => {
       setLoading(false); 
       navigation.goBack();
     } catch (err) {
-      console.log('Add transaction error', err?.message);
-      Alert.alert('Error', err.response?.data?.detail || 'Failed to add transaction.');
+      console.log('Add transaction error', err?.response?.data || err.message);
+      
+      const detail = err.response?.data?.detail;
+      let errorMsg = 'Failed to add transaction.';
+      
+      if (typeof detail === 'string') {
+        errorMsg = detail;
+      } else if (Array.isArray(detail)) {
+        // Handle FastAPI validation error list
+        errorMsg = detail.map(d => d.msg || d.message).join('\n') || 'Validation error.';
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+
+      Alert.alert('Error', errorMsg);
       setLoading(false);
     }
   }, [amount, location, category, notes, navigation]);

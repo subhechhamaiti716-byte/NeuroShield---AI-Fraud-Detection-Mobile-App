@@ -339,56 +339,71 @@ async def create_transaction(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Fetch this user's entire transaction history for feature extraction
-    history = (
-        db.query(models.Transaction)
-        .filter(models.Transaction.owner_id == current_user.id)
-        .order_by(models.Transaction.date_time.desc())
-        .all()
-    )
-
-    features = fraud_detector.extract_features(history, transaction)
-    risk_score = fraud_detector.predict_risk(features)
-    is_suspicious = risk_score > 0.6
-
-    db_tx = models.Transaction(
-        **transaction.dict(),
-        owner_id=current_user.id,
-        risk_score=risk_score,
-        is_suspicious=is_suspicious,
-    )
-    db.add(db_tx)
-    db.commit()
-    db.refresh(db_tx)
-    
-    logger.info(f"Transaction recorded for user {current_user.id}: ₹{transaction.amount} | Risk Score: {risk_score:.2f} | Suspicious: {is_suspicious}")
-
-    # Real-time alert via WebSocket & Push Notification
-    if is_suspicious:
-        alert_msg = json.dumps({
-            "type": "FRAUD_ALERT",
-            "transaction_id": db_tx.id,
-            "amount": db_tx.amount,
-            "location": db_tx.location,
-            "risk_score": risk_score,
-            "message": "Suspicious transaction detected. Was this you?",
-        })
-        asyncio.create_task(manager.send_personal_message(alert_msg, current_user.id))
+    try:
+        logger.info(f"Processing new transaction for user {current_user.id}: ₹{transaction.amount}")
         
-        # Feature 37: Push Notifications
-        if current_user.push_token:
-            asyncio.create_task(send_push_notification(
-                current_user.push_token,
-                "🚨 Fraud Alert",
-                f"Suspicious transaction of ₹{db_tx.amount} detected.",
-                {"transaction_id": db_tx.id}
-            ))
-            
-    # Invalidate cache for this user
-    if redis_client:
-        asyncio.create_task(redis_client.delete(f"analytics_{current_user.id}"))
+        # Fetch this user's entire transaction history for feature extraction
+        history = (
+            db.query(models.Transaction)
+            .filter(models.Transaction.owner_id == current_user.id)
+            .order_by(models.Transaction.date_time.desc())
+            .all()
+        )
 
-    return db_tx
+        logger.info(f"Extracted {len(history)} historical transactions for user {current_user.id}")
+
+        # Feature Extraction and Risk Prediction
+        features = fraud_detector.extract_features(history, transaction)
+        risk_score = fraud_detector.predict_risk(features)
+        is_suspicious = risk_score > 0.6
+
+        db_tx = models.Transaction(
+            **transaction.dict(),
+            owner_id=current_user.id,
+            risk_score=risk_score,
+            is_suspicious=is_suspicious,
+        )
+        db.add(db_tx)
+        db.commit()
+        db.refresh(db_tx)
+        
+        logger.info(f"Successfully saved transaction {db_tx.id} | Risk Score: {risk_score:.2f} | Suspicious: {is_suspicious}")
+
+        # Real-time alert via WebSocket & Push Notification
+        if is_suspicious:
+            alert_msg = json.dumps({
+                "type": "FRAUD_ALERT",
+                "transaction_id": db_tx.id,
+                "amount": db_tx.amount,
+                "location": db_tx.location,
+                "risk_score": risk_score,
+                "message": "Suspicious transaction detected. Was this you?",
+            })
+            asyncio.create_task(manager.send_personal_message(alert_msg, current_user.id))
+            
+            # Feature 37: Push Notifications
+            if current_user.push_token:
+                asyncio.create_task(send_push_notification(
+                    current_user.push_token,
+                    "🚨 Fraud Alert",
+                    f"Suspicious transaction of ₹{db_tx.amount} detected.",
+                    {"transaction_id": db_tx.id}
+                ))
+                
+        # Invalidate cache for this user
+        if redis_client:
+            asyncio.create_task(redis_client.delete(f"analytics_{current_user.id}"))
+
+        return db_tx
+
+    except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        logger.error(f"Error creating transaction: {e}\n{error_detail}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Internal Server Error: {str(e)}"
+        )
 
 
 @app.get("/transactions", response_model=List[schemas.TransactionResponse])
